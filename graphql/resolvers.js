@@ -33,14 +33,17 @@ const resolvers = {
               throw new Error('Invalid password');
           }
   
-          // Generate token
-          const token = jwt.sign({ userId: user.userId }, process.env.JWT_SECRET, {
-              expiresIn: '1h' // Set token expiration time
-          });
-  
+        // Generate token with user role
+        const token = jwt.sign({ 
+          userId: user.userId, 
+          role: user.role // Add user role to the token payload
+      }, process.env.JWT_SECRET, {
+          expiresIn: '1h' // Set token expiration time
+      });
+
           // Return the token and user data
           return { token, user };
-      } catch (error) {
+        } catch (error) {
           console.error('Login error:', error);
           throw new Error('Login failed');
       }
