@@ -1,4 +1,3 @@
-// Import dependencies
 const express = require('express');
 const { ApolloServer } = require('@apollo/server');
 const { expressMiddleware } = require('@apollo/server/express4');
@@ -6,81 +5,103 @@ const { ApolloServerPluginLandingPageGraphQLPlayground } = require('@apollo/serv
 const mongoose = require('mongoose');
 require('dotenv').config();
 const cors = require('cors');
+const multer = require('multer');
+const jwt = require('jsonwebtoken');
 
-// Import your typeDefs and resolvers
+// Import typeDefs and resolvers
 const typeDefs = require('./graphql/schema');
 const resolvers = require('./graphql/resolvers');
-const allowedOrigins =[
-'http://localhost:3000'
+
+// Allowed origins for CORS
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:4000/graphql', // GraphQL Playground
 ];
+
 // Create an Express app
 const app = express();
 
+// Set Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy headers
+app.use((req, res, next) => {
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+  next();
+});
+
 // Enable CORS for all routes
 app.use(
-    cors({
-      origin: allowedOrigins,
-    })
-  );
-// Add JSON middleware before applying Apollo middleware
-app.use(express.json()); // This middleware parses incoming JSON requests
+  cors({
+    origin: allowedOrigins,
+    credentials: true,
+    allowedHeaders: ['Authorization', 'Content-Type'], // Allow Authorization header
+  })
+);
+
+// Add JSON middleware before Apollo middleware
+app.use(express.json()); // Parses incoming JSON requests
 
 // Connect to MongoDB
 const uri = process.env.MONGO_URI;
-console.log("Mongo URI:", process.env.MONGO_URI); // Add this line for debugging
+console.log("Mongo URI:", uri); // Debug Mongo URI
 
 mongoose.connect(uri, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(() => console.log('Connected to MongoDB'))
-.catch((err) => console.error('MongoDB connection error:', err));
+  .then(() => console.log('Connected to MongoDB'))
+  .catch((err) => console.error('MongoDB connection error:', err));
 
+// Set up Multer for file uploads
+const upload = multer({ dest: 'uploads/' });
 
-// Create an Apollo Server instance
-const server = new ApolloServer({
-    typeDefs,
-    resolvers,
-    plugins: [
-        ApolloServerPluginLandingPageGraphQLPlayground(), // Optional: Enables GraphQL Playground for testing
-    ],
-
-    context: ({ req }) => {
-      // Get the authorization header from the request
-      const authHeader = req.headers.authorization;
-  
-      if (authHeader) {
-        // Extract the token from the authorization header (assuming Bearer token format)
-        const token = authHeader.split(' ')[1];
-  
-        try {
-          // Verify and decode the token to get the userId
-          const decodedToken = jwt.verify(token, JwtConfig.JWT_SECRET);
-          const userId = decodedToken.userId;
-          const restaurantId = decodedToken.restaurantId;
-          // Add the userId to the context object
-          return {restaurantId, userId, pubsub };
-        } catch (error) {
-          // Token verification failed, handle accordingly (e.g., throw an error)
-          throw new Error('Invalid token');
-        }
-      }
-    },
+// Define file upload endpoint
+app.post('/upload', upload.single('file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).send('No file uploaded.');
+  }
+  res.status(200).send({ message: 'File uploaded successfully.' });
 });
 
-// Apply Apollo middleware to the Express app
+// Apollo Server context function with debugging
+const context = ({ req }) => {
+  const token = req.headers.authorization ? req.headers.authorization.split(' ')[1] : null;
+
+  if (token) {
+    try {
+      const decodedToken = jwt.verify(token, process.env.JWT_SECRET);
+      console.log("Decoded Token:", decodedToken); // Log decoded token details
+      return { userId: decodedToken.userId, walletAddress: decodedToken.walletAddress}; // Return user details in context
+    } catch (error) {
+      console.error("Token verification failed:", error.message); // Log specific token error
+      throw new Error('Invalid token');
+    }
+  } else {
+    console.log("No token provided in request."); // Log missing token
+  }
+
+  return {}; // Return empty context if no token
+};
+
+// Apollo Server setup
+const server = new ApolloServer({
+  typeDefs,
+  resolvers,
+  plugins: [
+    ApolloServerPluginLandingPageGraphQLPlayground(), // Enable GraphQL Playground
+  ],
+});
+
+// Start Apollo Server and apply middleware
 async function startApolloServer() {
-    await server.start();
-    app.use('/graphql', expressMiddleware(server));
+  await server.start();
+  app.use('/graphql', expressMiddleware(server, { context })); // Apply context
 }
 
-// Start Apollo Server
+// Start the server
 startApolloServer().then(() => {
-    // Define the port
-    const PORT = process.env.PORT || 4000;
+  const PORT = process.env.PORT || 4000;
 
-    // Start the Express server
-    app.listen(PORT, () => {
-        console.log(`Server running on http://localhost:${PORT}/graphql`);
-    });
+  app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}/graphql`);
+  });
 });

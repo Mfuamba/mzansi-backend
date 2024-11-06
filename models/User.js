@@ -40,7 +40,19 @@ const UserSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    province: {
+        type: String,
+        required: true
+    },
     status: {
+        type: String,
+        required: true
+    },
+    hasVoted: {
+        type: Boolean,
+        default: false,  // Initialize with false
+      },
+    walletAddress: {
         type: String,
         required: true
     },
